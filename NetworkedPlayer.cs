@@ -1,9 +1,10 @@
-using MLAPI;
 using MLAPI.NetworkVariable;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class PlayerController : NetworkBehaviour
+public class NetworkedPlayer : MonoBehaviour
 {
 	enum Player
 	{
@@ -15,13 +16,11 @@ public class PlayerController : NetworkBehaviour
 
 	[SerializeField] private Player playerNum;
 	private NetworkVariableFloat movement = new NetworkVariableFloat(
-		new NetworkVariableSettings
-		{
+		new NetworkVariableSettings{
 			WritePermission = NetworkVariablePermission.Everyone,
 			ReadPermission = NetworkVariablePermission.Everyone
 		});
-	private float m;
-
+	
 
 	private bool isLocal = true;
 
@@ -29,7 +28,7 @@ public class PlayerController : NetworkBehaviour
 
 	private void Start()
 	{
-		switch (playerNum)
+        switch (playerNum)
 		{
 			case Player.Player1:
 				isLocal = GameObject.FindObjectOfType<GameManager>().player1Local == NetMode.Local;
@@ -43,14 +42,25 @@ public class PlayerController : NetworkBehaviour
 
 	void FixedUpdate()
 	{
-		//transform.Translate(0, movement.Value * speed, 0);
-		transform.Translate(0, m * speed, 0);
+		transform.Translate(0, movement.Value * speed, 0);
 		rb2d.velocity = Vector2.zero;
 	}
 
-	public void OnMovePlayer(InputAction.CallbackContext context)
+	public void OnMovePlayer1(InputAction.CallbackContext context)
 	{
-		//movement.Value = context.ReadValue<float>();
-		m = context.ReadValue<float>();
+        if (!isLocal)
+        {
+			return;
+        }
+		movement.Value = context.ReadValue<float>();
+	}
+
+	public void OnMovePlayer2(InputAction.CallbackContext context)
+	{
+		if (!isLocal)
+		{
+			return;
+		}
+		movement.Value = context.ReadValue<float>();
 	}
 }
