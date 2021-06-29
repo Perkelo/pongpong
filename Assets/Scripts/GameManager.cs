@@ -1,5 +1,6 @@
 using MLAPI;
 using MLAPI.NetworkVariable;
+using MLAPI.Transports.UNET;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -44,6 +45,31 @@ public class GameManager : NetworkBehaviour
     
     void Start()
     {
+        GameObject matchSettingsGO = GameObject.Find("MatchSettings");
+        if(matchSettingsGO != null)
+        {
+            MatchSettings matchSettings = matchSettingsGO.GetComponent<MatchSettings>();
+
+            switch (matchSettings.mode)
+            {
+                case Mode.Local:
+                    player1Local = NetMode.Local;
+                    player2Local = NetMode.Local;
+                    break;
+                case Mode.Host:
+                    player1Local = NetMode.Local;
+                    player2Local = NetMode.Online;
+                    break;
+                case Mode.Join:
+                    player1Local = NetMode.Online;
+                    player2Local = NetMode.Local;
+                    NetworkManager.Singleton.GetComponent<UNetTransport>().ConnectAddress = matchSettings.selectedServer.IP;
+                    NetworkManager.Singleton.GetComponent<UNetTransport>().ConnectPort = matchSettings.selectedServer.port;
+                    Debug.Log($"Connecting to {matchSettings.selectedServer}");
+                    break;
+            }
+        }
+
         if (player1Local == NetMode.Local && player2Local == NetMode.Local)
         {
             RestartGame();
@@ -62,6 +88,7 @@ public class GameManager : NetworkBehaviour
             if(player2Local == NetMode.Local)
             {
                 NetworkManager.Singleton.StartClient();
+                //NetworkManager.Singleton.GetComponent<UNetTransport>().ConnectAddress;
 
                 player1Score.OnValueChanged += delegate (int oldValue, int newValue)
                 {

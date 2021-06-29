@@ -244,8 +244,8 @@ MonoBehaviour:
   initialBallSpeedMultiplier: 8
   player1ScoreLabel: {fileID: 1803285819}
   player2ScoreLabel: {fileID: 833091730}
-  player1Local: 0
-  player2Local: 1
+  player1Local: 1
+  player2Local: 0
 --- !u!4 &114032536
 Transform:
   m_ObjectHideFlags: 0
@@ -545,8 +545,8 @@ MonoBehaviour:
   ServerWebsocketListenPort: 8887
   SupportWebsocket: 0
   Channels: []
-  UseMLAPIRelay: 0
-  MLAPIRelayAddress: 184.72.104.138
+  UseMLAPIRelay: 1
+  MLAPIRelayAddress: 127.0.0.1
   MLAPIRelayPort: 8888
   MessageSendMode: 0
 --- !u!114 &486211176
