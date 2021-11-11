@@ -1,9 +1,9 @@
-using MLAPI;
-using MLAPI.NetworkVariable;
+using System.Collections;
+
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class PlayerController : NetworkBehaviour
+public class PlayerController : MonoBehaviour
 {
 	enum Player
 	{
@@ -12,33 +12,36 @@ public class PlayerController : NetworkBehaviour
 	}
 
 	private Rigidbody2D rb2d;
+	private GameManager gameManager;
 
 	[SerializeField] private Player playerNum;
-	private NetworkVariableFloat movement = new NetworkVariableFloat(
-		new NetworkVariableSettings
-		{
-			WritePermission = NetworkVariablePermission.Everyone,
-			ReadPermission = NetworkVariablePermission.Everyone
-		});
 	private float m;
+	[SerializeField] private float cpuEpsilon = 0.1f;
+	[SerializeField] private float cpuDelay = 0.2f;
 
 
-	private bool isLocal = true;
+	[SerializeField] private bool isLocal = true;
 
 	[SerializeField] float speed = 1.0f;
 
 	private void Start()
 	{
+		gameManager = GameObject.FindObjectOfType<GameManager>();
 		switch (playerNum)
 		{
 			case Player.Player1:
-				isLocal = GameObject.FindObjectOfType<GameManager>().player1Local == NetMode.Local;
+				isLocal = gameManager.player1Local == NetMode.Local;
 				break;
 			case Player.Player2:
-				isLocal = GameObject.FindObjectOfType<GameManager>().player2Local == NetMode.Local;
+				isLocal = gameManager.player2Local == NetMode.Local;
 				break;
 		}
 		rb2d = GetComponent<Rigidbody2D>();
+
+        if (!isLocal)
+        {
+			StartCoroutine(AIMovement());
+        }
 	}
 
 	void FixedUpdate()
@@ -50,7 +53,22 @@ public class PlayerController : NetworkBehaviour
 
 	public void OnMovePlayer(InputAction.CallbackContext context)
 	{
-		//movement.Value = context.ReadValue<float>();
-		m = context.ReadValue<float>();
+        if (isLocal)
+		{
+			m = context.ReadValue<float>();
+		}
 	}
+
+	private IEnumerator AIMovement()
+    {
+        while (true)
+        {
+            float y = gameManager.GetClosestBallCoordinates(this.transform.position).y;
+			float diff = y - this.transform.position.y;
+
+			m = Mathf.Abs(m - diff) < cpuEpsilon ? 0 : Mathf.Sign(diff);
+
+			yield return new WaitForSeconds(cpuDelay);
+        }
+    }
 }

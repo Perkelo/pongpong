@@ -1,8 +1,6 @@
-using MLAPI;
-using MLAPI.NetworkVariable;
-using MLAPI.Transports.UNET;
-using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
+
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -17,149 +15,190 @@ public enum NetMode
     Online
 }
 
-public class GameManager : NetworkBehaviour
+public class GameManager : MonoBehaviour
 {
     [SerializeField] private GameObject ball;
+    private List<GameObject> balls;
+    private List<GameObject> pooledBalls;
+    private int maxPooledBalls = 10;
     [SerializeField] private float initialBallSpeedMultiplier = 2f;
 
     [SerializeField] private Text player1ScoreLabel;
     [SerializeField] private Text player2ScoreLabel;
 
-    private NetworkVariableInt player1Score = new NetworkVariableInt(
-        new NetworkVariableSettings
-        {
-            WritePermission = NetworkVariablePermission.ServerOnly,
-            ReadPermission = NetworkVariablePermission.Everyone
-        });
-    private NetworkVariableInt player2Score = new NetworkVariableInt(
-     new NetworkVariableSettings
-     {
-         WritePermission = NetworkVariablePermission.ServerOnly,
-         ReadPermission = NetworkVariablePermission.Everyone
-     });
-
-    private int ballCounter;
+    private int player1Score = 0;
+    private int player2Score = 0;
 
     [SerializeField] public NetMode player1Local;
     [SerializeField] public NetMode player2Local;
-    
+
+    private Thread networkThread = new Thread(CreateRoom);
+
+    [Header("VideoFX")]
+    [SerializeField] private float chromaTime = 0.2f;
+    [SerializeField] private float chromaIntensity = 0.015f;
+    [SerializeField] private float chromaZoomMagnitude = 1.1f;
+    [SerializeField] private float shakeXRange = 2f;
+    [SerializeField] private float shakeYRange = 2f;
+
     void Start()
     {
+        balls = new List<GameObject>();
+        pooledBalls = new List<GameObject>();
+        AudioManager.instance.PlayMusic(Music.Level);
         GameObject matchSettingsGO = GameObject.Find("MatchSettings");
-        if(matchSettingsGO != null)
+        Mode mode;
+        if (matchSettingsGO != null)
         {
             MatchSettings matchSettings = matchSettingsGO.GetComponent<MatchSettings>();
+            mode = matchSettings.mode;
+        }
+        else
+        {
+            mode = Mode.Local;
+        }
 
-            switch (matchSettings.mode)
-            {
-                case Mode.Local:
-                    player1Local = NetMode.Local;
-                    player2Local = NetMode.Local;
-                    break;
-                case Mode.Host:
-                    player1Local = NetMode.Local;
-                    player2Local = NetMode.Online;
-                    break;
-                case Mode.Join:
-                    player1Local = NetMode.Online;
-                    player2Local = NetMode.Local;
-                    NetworkManager.Singleton.GetComponent<UNetTransport>().ConnectAddress = matchSettings.selectedServer.IP;
-                    NetworkManager.Singleton.GetComponent<UNetTransport>().ConnectPort = matchSettings.selectedServer.port;
-                    Debug.Log($"Connecting to {matchSettings.selectedServer}");
-                    break;
-            }
+        switch (mode)
+        {
+            case Mode.Local:
+                player1Local = NetMode.Local;
+                player2Local = NetMode.Local;
+                break;
+            case Mode.Host:
+                player1Local = NetMode.Local;
+                player2Local = NetMode.Online;
+                break;
+            case Mode.Join:
+                player1Local = NetMode.Online;
+                player2Local = NetMode.Local;
+                break;
         }
 
         if (player1Local == NetMode.Local && player2Local == NetMode.Local)
         {
-            RestartGame();
+            Invoke(nameof(RestartGame), 2f);
         }
         else
         {
-            if(player1Local == NetMode.Local)
+            Invoke(nameof(RestartGame), 2f);
+            //networkThread.Start();
+            if (player1Local == NetMode.Local)
             {
-                NetworkManager.Singleton.StartServer();
-                NetworkManager.Singleton.OnClientConnectedCallback += delegate(ulong clientId)
-                {
-                    GameObject.Find("Player2").GetComponent<NetworkObject>().ChangeOwnership(clientId);
-                    RestartGame();
-                };
+                //Hosting
             }
-            if(player2Local == NetMode.Local)
+            if (player2Local == NetMode.Local)
             {
-                NetworkManager.Singleton.StartClient();
-                //NetworkManager.Singleton.GetComponent<UNetTransport>().ConnectAddress;
-
-                player1Score.OnValueChanged += delegate (int oldValue, int newValue)
-                {
-                    player1ScoreLabel.text = $"{newValue}";
-                };
-                player2Score.OnValueChanged += delegate (int oldValue, int newValue)
-                {
-                    player2ScoreLabel.text = $"{newValue}";
-                };
+                //Joining
             }
         }
     }
 
+    private static void CreateRoom()
+    {
+        MatchmakingConnector.UDPSendMessage("Create");
+        MatchmakingConnector.UDPSendMessage("List");
+    }
+
     public void RestartGame()
     {
+        AudioManager.instance.PlaySFX(SFX.EndMatch);
         player1ScoreLabel.text = "0";
         player2ScoreLabel.text = "0";
 
-        ballCounter = 1;
-
         if (player1Local == NetMode.Local)
         {
-            player1Score.Value = 0;
-            player2Score.Value = 0;
+            player1Score = 0;
+            player2Score = 0;
 
-            Rigidbody2D newBall = Instantiate(ball).GetComponent<Rigidbody2D>();
-            newBall.position = Vector2.zero;
-            newBall.velocity = Vector2.zero;
-            newBall.AddForce(new Vector2(Random.Range(0, 2) == 0 ? -1 : 1, Random.Range(-1.0f, 1.0f)).normalized * initialBallSpeedMultiplier, ForceMode2D.Impulse);
-
-            newBall.GetComponent<NetworkObject>().Spawn();
+            GameObject newBall = getBall();
+            Rigidbody2D newBallRB2D = newBall.GetComponent<Rigidbody2D>();
+            newBallRB2D.position = Vector2.zero;
+            newBallRB2D.velocity = Vector2.zero;
+            newBallRB2D.AddForce(new Vector2(Random.Range(0, 2) == 0 ? -1 : 1, Random.Range(-1.0f, 1.0f)).normalized * initialBallSpeedMultiplier, ForceMode2D.Impulse);
         }
-	}
+    }
 
-    public void OnGoalHit(Goal goal, GameObject ball) {
-        //Debug.Log(goal);
-        ballCounter--;
-
-        if (player1Local == NetMode.Local)
+    public void OnGoalHit(Goal goal, GameObject ball)
+    {
+        switch (goal)
         {
-            switch (goal)
-            {
-                case Goal.Right:
-                    player1Score.Value++;
-                    player1ScoreLabel.text = $"{player1Score.Value}";
-                    break;
-                case Goal.Left:
-                    player2Score.Value++;
-                    player2ScoreLabel.text = $"{player2Score.Value}";
-                    break;
-            }
-            Destroy(ball);
+            case Goal.Right:
+                player1Score++;
+                player1ScoreLabel.text = $"{player1Score}";
+                break;
+            case Goal.Left:
+                player2Score++;
+                player2ScoreLabel.text = $"{player2Score}";
+                break;
         }
+        removeBall(ball);
 
-        if(ballCounter == 0) {
+        if (balls.Count == 0)
+        {
             Invoke(nameof(RestartGame), 2f);
         }
-	}
+    }
 
-    public void OnBallPlayerCollision(GameObject ball) {
-        ballCounter++;
-        if (player1Local == NetMode.Local)
-        {
-            GameObject newBall = Instantiate(ball);
-            newBall.GetComponent<Rigidbody2D>().velocity = (ball.GetComponent<Rigidbody2D>().velocity * 1.08f).Rotate(Random.Range(-10f, 10f));
-            newBall.GetComponent<NetworkObject>().Spawn();
-        }
-	}
+    public void OnBallPlayerCollision(GameObject ball)
+    {
+        GameObject newBall = getBall();
+        newBall.GetComponent<Rigidbody2D>().velocity = (ball.GetComponent<Rigidbody2D>().velocity * 1.08f).Rotate(Random.Range(-10f, 10f));
+        newBall.transform.position = ball.transform.position;
+        CustomFX.instance.ChromaJump(chromaTime, chromaIntensity, chromaZoomMagnitude);
+        CustomFX.instance.Shake(chromaTime, shakeXRange, shakeYRange);
+        AudioManager.instance.PlaySFX(SFX.Hit);
+    }
 
     public void OnQuitPressed()
     {
         Application.Quit();
+    }
+
+    private GameObject getBall()
+    {
+        GameObject outBall;
+        if (pooledBalls.Count == 0)
+        {
+            outBall = Instantiate(ball);
+        }
+        else
+        {
+            outBall = pooledBalls[0];
+            pooledBalls.RemoveAt(0);
+            outBall.SetActive(true);
+            outBall.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
+        }
+        balls.Add(outBall);
+        return outBall;
+    }
+
+    private void removeBall(GameObject ball)
+    {
+        ball.SetActive(false);
+        if (pooledBalls.Count < maxPooledBalls)
+        {
+            pooledBalls.Add(ball);
+        }
+        else
+        {
+            Destroy(ball);
+        }
+        balls.Remove(ball);
+    }
+
+    public Vector2 GetClosestBallCoordinates(Vector2 position)
+    {
+        Vector2 result = position;
+        float minDistance = Mathf.Infinity;
+        foreach(GameObject ball in balls)
+        {
+            float distance = Vector2.Distance(position, ball.transform.position);
+            if (distance < minDistance)
+            {
+                result = ball.transform.position;
+                minDistance = distance;
+            }
+        }
+        return result;
     }
 }

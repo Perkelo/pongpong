@@ -12,7 +12,7 @@ public enum Mode
 public class MatchSettings : MonoBehaviour
 {
     public Mode mode;
-    public ServerEndpoint selectedServer;
+    //public ServerEndpoint selectedServer;
 
     private void Start()
     {

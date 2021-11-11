@@ -5,8 +5,10 @@ using UnityEngine;
 
 public class MatchmakingConnector : MonoBehaviour
 {
-    [SerializeField] private string matchmakingServerIP = "127.0.0.1";
-    [SerializeField] private int matchmakingServerPort = 7878;
+    private static int MAX_TRIES = 10;
+    //private static int DATAGRAM_SIZE = 32;
+    [SerializeField] private static string matchmakingServerIP = "127.0.0.1";
+    [SerializeField] private static int matchmakingServerPort = 56567;
     
     [HideInInspector] public static MatchmakingConnector Singleton;
 
@@ -15,58 +17,56 @@ public class MatchmakingConnector : MonoBehaviour
         Singleton = this;
     }
 
-    public List<ServerEndpoint> GetServers()
+    public List<Room> GetRooms()
     {
-        string response = Connect(matchmakingServerIP, matchmakingServerPort, "GS");
-        List<ServerEndpoint> servers = ParseJson(response);
-        return servers;
-
-        //List<ServerEndpoint> servers = new List<ServerEndpoint>();
-        servers.Add(new ServerEndpoint("127.0.0.1", 1111));
-        servers.Add(new ServerEndpoint("127.0.0.1", 1112));
-        servers.Add(new ServerEndpoint("127.0.0.1", 1113));
-        servers.Add(new ServerEndpoint("127.0.0.1", 1114));
-        servers.Add(new ServerEndpoint("127.0.0.1", 1115));
-        return servers;
+        string response = UDPSendMessage(matchmakingServerIP, matchmakingServerPort, "List");
+        List<Room> rooms = ParseJson(response);
+        return rooms;
     }
 
-    static private string Connect(String server, Int32 port, String message)
+    static public string UDPSendMessage(String message)
+    {
+        return UDPSendMessage(matchmakingServerIP, matchmakingServerPort, message);
+    }
+
+    static private string UDPSendMessage(String server, Int32 port, String message)
     {
         try
         {
-            TcpClient client = new TcpClient(server, port);
+            UdpClient client = new UdpClient(server, port);
+            var endpoint = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+            client.Client.ReceiveTimeout = 2000;
+            client.Client.SendTimeout = 2000;
+            byte[] request = System.Text.Encoding.ASCII.GetBytes(message);
+            byte[] response = null;
 
-            // Translate the passed message into ASCII and store it as a Byte array.
-            Byte[] data = System.Text.Encoding.ASCII.GetBytes(message + "\n");
+            for (int i = 0; i < MAX_TRIES; i++)
+            {
+                try
+                {
+                    client.Send(request, request.Length);
+                    Debug.Log($"Sent: {message}");
+                    response = client.Receive(ref endpoint);
+                    break;
+                }
+                catch (SocketException)
+                {
+                    Debug.LogWarning("Socket exception, retrying...");
+                }
+            }
 
-            // Get a client stream for reading and writing.
-            //  Stream stream = client.GetStream();
+            if(response == null)
+            {
+                Debug.LogError("Unable to connect to server");
+                throw new SocketException();
+            }
 
-            NetworkStream stream = client.GetStream();
+            var responseMsg = System.Text.Encoding.ASCII.GetString(response, 0, response.Length);
 
-            // Send the message to the connected TcpServer.
-            stream.Write(data, 0, data.Length);
-
-            Debug.Log($"Sent: {message}");
-
-            // Receive the TcpServer.response.
-
-            // Buffer to store the response bytes.
-            data = new Byte[256];
-
-            // String to store the response ASCII representation.
-            String responseData = String.Empty;
-
-            // Read the first batch of the TcpServer response bytes.
-            Int32 bytes = stream.Read(data, 0, data.Length);
-            responseData = System.Text.Encoding.ASCII.GetString(data, 0, bytes);
-            Debug.Log($"Received: {responseData}");
-
-            // Close everything.
-            stream.Close();
+            Debug.Log(responseMsg);
             client.Close();
 
-            return responseData;
+            return responseMsg;
         }
         catch (ArgumentNullException e)
         {
@@ -80,19 +80,16 @@ public class MatchmakingConnector : MonoBehaviour
         return "";
     }
 
-    private static List<ServerEndpoint> ParseJson(string json)
+    private static List<Room> ParseJson(string json)
     {
         string current = json;
-        List<ServerEndpoint> servers = new List<ServerEndpoint>();
+        List<Room> rooms = new List<Room>();
         while (current.Contains("{"))
         {
-            Debug.Log(current);
             string element = current.Substring(current.IndexOf("{"), current.IndexOf("}"));
-            //Debug.Log(element);
-            servers.Add(JsonUtility.FromJson<ServerEndpoint>(element));
+            rooms.Add(JsonUtility.FromJson<Room>(element));
             current = current.Substring(current.IndexOf("}") + 1);
-            Debug.Log(current);
         }
-        return servers;
+        return rooms;
     }
 }
